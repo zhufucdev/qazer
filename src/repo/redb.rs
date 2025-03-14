@@ -1,9 +1,9 @@
-use std::convert::Into;
 use crate::repo::model::{AccountIndex, Repository};
 use redb::{
-    AccessGuard, Database, DatabaseError, Error, ReadOnlyTable, ReadableTable, TableDefinition,
+    Database, DatabaseError, Error, ReadOnlyTable, ReadableTable, TableDefinition,
     TableError, Value,
 };
+use std::convert::Into;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -75,7 +75,8 @@ where
 
 impl<From, Into> Repository<Into> for RedbRepo<From, Into>
 where
-    From: Value + Clone + 'static + for<'a> std::borrow::Borrow<<From as Value>::SelfType<'a>>,
+    for <'a> From: Value<SelfType<'a> = From> + Clone + 'static + std::borrow::Borrow<<From as Value>::SelfType<'a>>,
+    for<'a> <From as Value>::SelfType<'a>: Clone
 {
     type Err = Error;
 
@@ -84,14 +85,14 @@ where
         let table = read_txn.open_table(self.table)?;
         Ok(table
             .get(account)?
-            .map(|s| (self.transform.forward)(s.clone())))
+            .map(|s| (self.transform.forward)(s.value().clone())))
     }
 
     fn revoke(&mut self, account: AccountIndex) -> Result<Option<Into>, Error> {
         let write_txn = self.db.begin_write()?;
         let mut table = write_txn.open_table(self.table)?;
         let option = table.remove(account)?;
-        Ok(option.map(|s| (self.transform.forward)(s.clone())))
+        Ok(option.map(|s| (self.transform.forward)(s.value().clone())))
     }
 
     fn put(&mut self, account: AccountIndex, data: Into) -> Result<(), Error> {
@@ -172,7 +173,7 @@ where
 
 impl<From, Into> Iterator for EntryIterator<Into, From>
 where
-    From: Value + Clone + 'static,
+    for<'a> From: Value<SelfType<'a> = From> + Clone + 'static,
 {
     type Item = (AccountIndex, Into);
 
@@ -180,7 +181,7 @@ where
         let key = self.key_iter.next()?;
         self.table
             .get(key)
-            .map_or(None, |e| Some((key, (self.forward)(e.unwrap().clone()))))
+            .map_or(None, |e| Some((key, (self.forward)(e.unwrap().value().clone()))))
     }
 }
 
@@ -193,22 +194,6 @@ impl<T: Iterator> Iterator for OptionalIterator<T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.as_mut()?.next()
-    }
-}
-
-trait CloneAccess<T> {
-    fn clone(&self) -> T;
-}
-
-impl<'a, T> CloneAccess<T> for AccessGuard<'a, T>
-where
-    T: Value + Clone,
-{
-    fn clone(&self) -> T {
-        unsafe {
-            let v = self.value();
-            std::mem::transmute_copy::<_, T>(&v).clone()
-        }
     }
 }
 
