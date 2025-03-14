@@ -91,17 +91,3 @@ impl Display for Error {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::tencent::Client;
-    use std::env;
-
-    #[tokio::test]
-    async fn fetches_ap() {
-        let client = Client::with_token(
-            &env::var("USER_INFO").expect("Environment variable USER_INFO is missing"),
-        );
-        client.get_application_progress().await.expect("Error fetching");
-    }
-}

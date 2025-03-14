@@ -70,3 +70,27 @@ impl Client {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tencent::Client;
+    use std::env;
+    use std::env::VarError;
+
+    #[tokio::test]
+    async fn fetches_ap() {
+        let token = env::var("USER_INFO");
+        match token {
+            Ok(t) => {
+                let client = Client::with_token(&t);
+                client.get_application_progress().await.expect("Error fetching");
+            }
+            Err(VarError::NotPresent) => {
+                eprintln!("Environment variable USER_INFO is missing. Skipping...")
+            }
+            Err(e) => {
+                panic!("Error while getting USER_INFO env: {}", e)
+            }
+        }
+    }
+}
