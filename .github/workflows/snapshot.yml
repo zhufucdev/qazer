@@ -41,6 +41,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4.6.1
         with:
-          name: qazer-git
+          name: qazer-${{ matrix.os }}
           path: ./target/release/qazer*
 
