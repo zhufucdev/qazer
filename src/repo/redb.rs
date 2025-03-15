@@ -75,7 +75,7 @@ where
 
 impl<From, Into> Repository<Into> for RedbRepo<From, Into>
 where
-    for <'a> From: Value<SelfType<'a> = From> + Clone + 'static + std::borrow::Borrow<<From as Value>::SelfType<'a>>,
+    for<'a> From: Value<SelfType<'a> = From> + Clone + 'static + std::borrow::Borrow<<From as Value>::SelfType<'a>>,
     for<'a> <From as Value>::SelfType<'a>: Clone
 {
     type Err = Error;

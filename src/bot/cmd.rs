@@ -9,6 +9,8 @@ pub enum Command {
     SignIn { token: String },
     #[command(description = "get the current application state.")]
     Get,
+    #[command(description = "set the polling interval between which the application progress is queried.")]
+    Interval,
     #[command(description = "revoke your token and stop receiving notifications.")]
     SignOut,
 }

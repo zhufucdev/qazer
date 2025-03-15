@@ -1,6 +1,6 @@
 pub mod client;
 pub mod error;
 pub mod model;
-mod progress;
+pub mod progress;
 
 pub use client::{Client, ClientResult};

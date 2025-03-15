@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::io;
 
 #[derive(Debug)]
-pub(crate) enum Error {
+pub enum Error {
     TokenExpired,
     Http(reqwest::Error),
     Parse(reqwest::Error),
