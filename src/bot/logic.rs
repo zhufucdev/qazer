@@ -11,8 +11,10 @@ use teloxide::payloads::SendMessageSetters;
 use teloxide::prelude::{ChatId, Message, Requester, ResponseResult, UserId};
 use teloxide::types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup};
 use teloxide::Bot;
+use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
 
 type TClient = crate::tencent::Client;
 
@@ -197,12 +199,12 @@ where
                             "Polling has been disabled.".into()
                         }
                     };
-                    bot.answer_callback_query(&query.id).await?;
                     if let Some(msg) = query.regular_message() {
                         bot.edit_message_text(msg.chat.id, msg.id, result).await?;
                     } else if let Some(id) = query.inline_message_id {
                         bot.edit_message_text_inline(id, result).await?;
                     }
+                    bot.answer_callback_query(&query.id).await?;
                 }
                 Err(_) => {
                     bot.send_message(
@@ -348,12 +350,16 @@ where
 
     pub async fn start_monitoring(&mut self) {
         loop {
-            let next = self.watch.next().await;
-            match next {
-                Some(acc) => self.notify_if_applicable(acc).await,
-                None => {
-                    self.ic_rx.recv().await;
+            select! {
+                next = self.watch.next() => {
+                    match next {
+                        Some(acc) => self.notify_if_applicable(acc).await,
+                        None => {
+                            self.ic_rx.recv().await;
+                        }
+                    }
                 }
+                _ = self.ic_rx.recv() => {}
             }
         }
     }
