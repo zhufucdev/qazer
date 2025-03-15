@@ -96,9 +96,10 @@ where
     }
 
     pub async fn signin(&mut self, bot: &Bot, msg: Message, token: String) -> ResponseResult<()> {
-        if token.is_empty() { 
-            bot.send_message(msg.chat.id, "Empty token. This operation has no effect.").await?;
-            return Ok(())
+        if token.is_empty() {
+            bot.send_message(msg.chat.id, "Empty token. This operation has no effect.")
+                .await?;
+            return Ok(());
         }
         let new_client = TClient::with_token(&token);
         match new_client.get_application_progress().await {
@@ -115,7 +116,8 @@ where
                         Ok(_) => {
                             bot.send_message(msg.chat.id, "Token has been updated.")
                                 .await?;
-                            bot.edit_message_text(msg.chat.id, msg.id, "/signin").await?;
+                            bot.edit_message_text(msg.chat.id, msg.id, "/signin")
+                                .await?;
                         }
                         Err(e) => {
                             eprintln!(
@@ -169,8 +171,7 @@ where
             Some(ref min) => match min.parse::<u32>() {
                 Ok(min) => {
                     let acc = &query.from.id.0;
-                    let result: String = 
-                    if let Err(e) = self
+                    let result: String = if let Err(e) = self
                         .intervals
                         .put(*acc, Duration::from_secs(min as u64 * 60))
                     {
@@ -178,13 +179,19 @@ where
                             "Error while updating interval database, user id = {}: {:?}",
                             acc, e
                         );
-                        format!("Failed to update database. {}", get_contact_admin_text(*acc))
+                        format!(
+                            "Failed to update database. {}",
+                            get_contact_admin_text(*acc)
+                        )
                     } else {
-                        self.ic_tx.send(*acc).await.expect(format!("Failed to notify interval change, user id = {}", *acc).as_str());
+                        self.ic_tx.send(*acc).await.expect(
+                            format!("Failed to notify interval change, user id = {}", *acc)
+                                .as_str(),
+                        );
                         format!("Polling interval has been updated to {min}min.")
                     };
                     bot.answer_callback_query(&query.id).await?;
-                    if let Some(msg) = query.regular_message() {  
+                    if let Some(msg) = query.regular_message() {
                         bot.edit_message_text(msg.chat.id, msg.id, result).await?;
                     } else if let Some(id) = query.inline_message_id {
                         bot.edit_message_text_inline(id, result).await?;
