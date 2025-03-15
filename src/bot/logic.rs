@@ -171,10 +171,13 @@ where
             Some(ref min) => match min.parse::<u32>() {
                 Ok(min) => {
                     let acc = &query.from.id.0;
-                    let result: String = if let Err(e) = self
-                        .intervals
-                        .put(*acc, Duration::from_secs(min as u64 * 60))
-                    {
+                    let result: String = if let Some(e) = (if min > 0 {
+                        self.intervals
+                            .put(*acc, Duration::from_secs(min as u64 * 60))
+                            .err()
+                    } else {
+                        self.intervals.revoke(*acc).err()
+                    }) {
                         eprintln!(
                             "Error while updating interval database, user id = {}: {:?}",
                             acc, e
@@ -188,7 +191,11 @@ where
                             format!("Failed to notify interval change, user id = {}", *acc)
                                 .as_str(),
                         );
-                        format!("Polling interval has been updated to {min}min.")
+                        if min > 0 {
+                            format!("Polling interval has been updated to {min}min.")
+                        } else {
+                            "Polling has been disabled.".into()
+                        }
                     };
                     bot.answer_callback_query(&query.id).await?;
                     if let Some(msg) = query.regular_message() {
@@ -374,5 +381,6 @@ fn make_interval_keyboard() -> InlineKeyboardMarkup {
                 .collect(),
         )
     }
+    keys.push(vec![InlineKeyboardButton::callback("Turn Off", "0")]);
     InlineKeyboardMarkup::new(keys)
 }
