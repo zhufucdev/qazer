@@ -14,7 +14,6 @@ use teloxide::Bot;
 use tokio::select;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex;
-use tokio::task::AbortHandle;
 
 type TClient = crate::tencent::Client;
 
@@ -25,9 +24,9 @@ where
 {
     tokens: Tokens,
     cache: Arc<Mutex<APs>>,
-    intervals: Intervals,
+    intervals: Arc<Mutex<Intervals>>,
     clients: Arc<Mutex<ClientCollection>>,
-    ic_tx: Sender<AccountIndex>,
+    ic_tx: Sender<(AccountIndex, Duration)>,
 }
 
 impl<R, T, I> Basic<R, T, I>
@@ -42,9 +41,9 @@ where
     pub fn new(
         tokens: R,
         cache: Arc<Mutex<T>>,
-        intervals: I,
+        intervals: Arc<Mutex<I>>,
         clients: Arc<Mutex<ClientCollection>>,
-        interval_change_tx: Sender<AccountIndex>,
+        interval_change_tx: Sender<(AccountIndex, Duration)>,
     ) -> Basic<R, T, I> {
         Self {
             tokens,
@@ -173,12 +172,15 @@ where
             Some(ref min) => match min.parse::<u32>() {
                 Ok(min) => {
                     let acc = &query.from.id.0;
+                    let duration = Duration::from_secs(min as u64 * 60);
                     let result: String = if let Some(e) = (if min > 0 {
                         self.intervals
-                            .put(*acc, Duration::from_secs(min as u64 * 60))
+                            .lock()
+                            .await
+                            .put(*acc, duration)
                             .err()
                     } else {
-                        self.intervals.revoke(*acc).err()
+                        self.intervals.lock().await.revoke(*acc).err()
                     }) {
                         eprintln!(
                             "Error while updating interval database, user id = {}: {:?}",
@@ -189,7 +191,7 @@ where
                             get_contact_admin_text(*acc)
                         )
                     } else {
-                        self.ic_tx.send(*acc).await.expect(
+                        self.ic_tx.send((*acc, duration)).await.expect(
                             format!("Failed to notify interval change, user id = {}", *acc)
                                 .as_str(),
                         );
@@ -256,40 +258,33 @@ where
     }
 }
 
-pub struct Watch<AP: Repository<ApplicationProgress>> {
+pub struct Watch<AP: Repository<ApplicationProgress>, I: Repository<Duration>> {
     bot: Arc<Bot>,
     clients: Arc<Mutex<ClientCollection>>,
     cache: Arc<Mutex<AP>>,
-    watch: Watcher<AccountIndex>,
-    ic_rx: Receiver<AccountIndex>,
+    intervals: Arc<Mutex<I>>,
+    ic_rx: Receiver<(AccountIndex, Duration)>,
 }
 
-impl<AP> Watch<AP>
+impl<AP, I> Watch<AP, I>
 where
     AP: Repository<ApplicationProgress>,
     <AP as Repository<ApplicationProgress>>::Err: Debug,
+    I: Repository<Duration>,
+    <I as Repository<Duration>>::Err: Debug,
 {
-    pub fn new<I>(
+    pub fn new(
         bot: Arc<Bot>,
         clients: Arc<Mutex<ClientCollection>>,
-        intervals: &I,
+        intervals: Arc<Mutex<I>>,
         cache: Arc<Mutex<AP>>,
-        change_rx: Receiver<AccountIndex>,
-    ) -> Self
-    where
-        I: Repository<Duration>,
-        <I as Repository<Duration>>::Err: Debug,
-    {
-        let watch: Watcher<AccountIndex> = intervals
-            .entries()
-            .expect("Failed to list user intervals")
-            .collect();
-
+        change_rx: Receiver<(AccountIndex, Duration)>,
+    ) -> Self {
         Self {
             bot,
             clients,
             cache,
-            watch,
+            intervals,
             ic_rx: change_rx,
         }
     }
@@ -349,17 +344,31 @@ where
     }
 
     pub async fn start_monitoring(&mut self) {
+        let mut watch: Watcher<AccountIndex> = self
+            .intervals
+            .lock()
+            .await
+            .entries()
+            .expect("Failed to list user intervals")
+            .collect();
         loop {
             select! {
-                next = self.watch.next() => {
+                next = watch.next() => {
                     match next {
-                        Some(acc) => self.notify_if_applicable(acc).await,
+                        Some(acc) => {
+                            self.notify_if_applicable(acc).await;
+                            if let Ok(Some(d)) = self.intervals.lock().await.get(acc) {
+                                watch.push(acc, d);
+                            }
+                        },
                         None => {
                             self.ic_rx.recv().await;
                         }
                     }
                 }
-                _ = self.ic_rx.recv() => {}
+                Some((acc, duration)) = self.ic_rx.recv() => {
+                    watch.push(acc, duration)
+                }
             }
         }
     }

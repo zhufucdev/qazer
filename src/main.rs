@@ -26,7 +26,6 @@ type DefaultBasicLogic = bot::logic::Basic<
     RedbRepo<Vec<u8>, ApplicationProgress>,
     RedbRepo<u32, Duration>,
 >;
-type DefaultWatchLogic = bot::logic::Watch<RedbRepo<u32, Duration>>;
 
 const TOKENS_TABLE: TableDefinition<AccountIndex, String> = TableDefinition::new("tokens");
 const PROGRESS_TABLE: TableDefinition<AccountIndex, Vec<u8>> = TableDefinition::new("progress");
@@ -44,32 +43,34 @@ async fn main() {
             backward: |e| bson::to_vec(&e).unwrap(),
         },
     )));
-    let interval_repo = RedbRepo::new_proxy(
+    let interval_repo = Arc::new(Mutex::new(RedbRepo::new_proxy(
         INTERVAL_TABLE,
         db.to_owned(),
         repo::redb::Transformer {
             forward: |minutes| Duration::from_secs((minutes as u64) * 60),
             backward: |duration| (duration.as_secs() / 60) as u32,
         },
-    );
+    )));
 
-    let clients = Arc::new(Mutex::new(bot::clients::ClientCollection::from_token_repo(&token_repo)));
+    let clients = Arc::new(Mutex::new(bot::clients::ClientCollection::from_token_repo(
+        &token_repo,
+    )));
     let (ic_tx, ic_rx) = tokio::sync::mpsc::channel(1);
 
     let bot = Arc::new(Bot::from_env());
     let mut watch_logic = bot::logic::Watch::new(
         bot.to_owned(),
         clients.to_owned(),
-        &interval_repo,
+        interval_repo.to_owned(),
         progress_repo.to_owned(),
-        ic_rx
+        ic_rx,
     );
     let basic_logic = Arc::new(Mutex::new(bot::logic::Basic::new(
         token_repo,
         progress_repo,
         interval_repo,
         clients,
-        ic_tx
+        ic_tx,
     )));
 
     let handler = dptree::entry()
@@ -80,9 +81,7 @@ async fn main() {
         )
         .branch(Update::filter_callback_query().endpoint(default_callback_handler));
 
-    let watch_handle = spawn(async move {
-        watch_logic.start_monitoring().await
-    });
+    let watch_handle = spawn(async move { watch_logic.start_monitoring().await });
     Dispatcher::builder(bot.to_owned(), handler)
         .dependencies(dptree::deps![basic_logic.to_owned()])
         .error_handler(LoggingErrorHandler::new())
