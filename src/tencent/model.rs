@@ -11,7 +11,7 @@ pub struct CurrentStatus {
 #[serde(rename_all = "camelCase")]
 pub struct PositionInfo {
     pub apply_position_txt: String,
-    pub interview_position_txt: String,
+    pub interview_position_txt: Option<String>,
     pub sub_direction_id_txt: Option<String>,
 }
 
