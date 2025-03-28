@@ -19,7 +19,7 @@ where
     ID: Eq + Copy,
 {
     pq: LinkedList<WatchNode<ID>>,
-    mtx: Sender<()>,
+    change_chan: Sender<()>,
     pending: usize,
 }
 
@@ -31,7 +31,7 @@ where
         let (tx, _) = broadcast::channel(1);
         Self {
             pq: LinkedList::new(),
-            mtx: tx,
+            change_chan: tx,
             pending: 0,
         }
     }
@@ -46,7 +46,7 @@ where
 
     pub fn pop(&mut self) -> Option<ID> {
         if let Some(peek) = self.pq.pop_front() {
-            let _ = self.mtx.send(());
+            let _ = self.change_chan.send(());
             Some(peek.id)
         } else {
             None
@@ -55,7 +55,7 @@ where
 
     pub async fn next(&mut self) -> Option<ID> {
         self.pending += 1;
-        let mut rx = self.mtx.subscribe();
+        let mut rx = self.change_chan.subscribe();
 
         loop {
             let peek = self.pq.front()?.clone();
@@ -86,11 +86,13 @@ where
                 rear.push_front(node);
                 self.pq.append(&mut rear);
                 if idx == 0 && self.pending > 0 {
-                    let _ = self.mtx.send(());
+                    let _ = self.change_chan.send(());
                 }
                 return;
             }
         }
+        self.pq.push_front(node);
+        let _ = self.change_chan.send(());
     }
 }
 
@@ -108,7 +110,7 @@ where
         let (tx, _) = broadcast::channel(1);
         Self {
             pq: LinkedList::from_iter(pq),
-            mtx: tx,
+            change_chan: tx,
             pending: 0
         }
     }
